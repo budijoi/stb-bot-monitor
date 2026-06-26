@@ -24,7 +24,7 @@ Bot Telegram untuk monitoring server STB (Set-Top Box) via SSH.
 1. Clone repositori:
 
 ```bash
-git clone https://github.com/username/stb-bot-monitor.git
+git clone https://github.com/budijoi/stb-bot-monitor.git
 cd stb-bot-monitor
 ```
 
