@@ -1,4 +1,6 @@
 import logging
+import os
+import sys
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -54,6 +56,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/ping <nama> - Ping test STB\n"
         "/speedtest <nama> - Speedtest STB\n"
         "/reboot <nama> - Reboot STB\n"
+        "/restart - Restart bot Telegram\n"
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -283,6 +286,15 @@ async def cmd_reboot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"⚠️ Yakin ingin reboot {name}? (gunakan: /reboot_confirm {name})")
 
 
+async def cmd_restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if allowed_users and update.effective_user.id not in allowed_users:
+        return
+
+    await update.message.reply_text("🔄 Merestart bot...")
+    logger.info("Bot restart via Telegram command.")
+    os._exit(0)
+
+
 async def cmd_reboot_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if allowed_users and update.effective_user.id not in allowed_users:
         return
@@ -323,6 +335,7 @@ def main():
     app.add_handler(CommandHandler("speedtest", cmd_speedtest))
     app.add_handler(CommandHandler("reboot", cmd_reboot))
     app.add_handler(CommandHandler("reboot_confirm", cmd_reboot_confirm))
+    app.add_handler(CommandHandler("restart", cmd_restart))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print("[INFO] Bot started. Press Ctrl+C to stop.")

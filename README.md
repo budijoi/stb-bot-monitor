@@ -36,6 +36,10 @@ apt update && apt install -y python3 python3-pip
 
 3. Install dependencies — pilih salah satu metode:
 
+   > **Catatan:** Script cukup diinstall di **satu perangkat saja** (VPS, PC, atau salah satu STB).
+   > Bot akan SSH ke semua STB yang terdaftar di `stb_list.json` dari satu tempat tersebut.
+   > Pastikan perangkat tempat bot berjalan bisa mengakses port SSH semua STB.
+
    **Metode A — Virtual environment (disarankan):**
 
    ```bash
@@ -103,6 +107,7 @@ apt update && apt install -y python3 python3-pip
 | `/speedtest <nama>` | Menjalankan speedtest (butuh speedtest-cli di STB) |
 | `/reboot <nama>` | Mereset STB (konfirmasi via `/reboot_confirm`) |
 | `/reboot_confirm <nama>` | Konfirmasi reboot STB |
+| `/restart` | Restart bot Telegram |
 
 ## Auto-start (Bot Aktif Setelah Reboot)
 
