@@ -1,0 +1,20 @@
+{
+  "bot_token": "YOUR_BOT_TOKEN_HERE",
+  "allowed_users": [],
+  "stb_list": [
+    {
+      "name": "stb-1",
+      "host": "192.168.1.100",
+      "port": 22,
+      "username": "root",
+      "password": "password123"
+    },
+    {
+      "name": "stb-2",
+      "host": "192.168.1.101",
+      "port": 22,
+      "username": "root",
+      "password": "password123"
+    }
+  ]
+}
