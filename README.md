@@ -28,13 +28,30 @@ git clone https://github.com/budijoi/stb-bot-monitor.git
 cd stb-bot-monitor
 ```
 
-2. Install dependencies:
+2. Install Python dan pip (khusus Armbian/Debian/Ubuntu):
 
 ```bash
-pip install -r requirements.txt
+apt update && apt install -y python3 python3-pip
 ```
 
-3. Edit file `stb_list.json`:
+3. Install dependencies — pilih salah satu metode:
+
+   **Metode A — Virtual environment (disarankan):**
+
+   ```bash
+   apt install -y python3-venv
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+   **Metode B — Bypass system package protection:**
+
+   ```bash
+   pip install --break-system-packages -r requirements.txt
+   ```
+
+4. Edit file `stb_list.json`:
 
 ```json
 {
@@ -63,11 +80,13 @@ pip install -r requirements.txt
 | `username` | Username SSH |
 | `password` | Password SSH |
 
-4. Jalankan bot:
+5. Jalankan bot:
 
-```bash
-python bot.py
-```
+   ```bash
+   python bot.py
+   ```
+
+   > Jika menggunakan virtual environment, aktifkan dulu: `source venv/bin/activate`
 
 ## Command Bot
 
