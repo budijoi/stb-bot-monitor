@@ -108,6 +108,10 @@ apt update && apt install -y python3 python3-pip
 | `/reboot <nama>` | Mereset STB (konfirmasi via `/reboot_confirm`) |
 | `/reboot_confirm <nama>` | Konfirmasi reboot STB |
 | `/restart` | Restart bot Telegram |
+| `/check_update` | Cek update script dari git remote |
+| `/script_update` | Update script (git pull) lalu restart |
+| `/delete_bot` | Hapus bot dari server (konfirmasi via `/delete_bot_confirm`) |
+| `/delete_bot_confirm` | Konfirmasi hapus bot |
 
 ## Auto-start (Bot Aktif Setelah Reboot)
 

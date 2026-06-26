@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import subprocess
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -57,6 +58,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/speedtest <nama> - Speedtest STB\n"
         "/reboot <nama> - Reboot STB\n"
         "/restart - Restart bot Telegram\n"
+        "/check_update - Cek update script\n"
+        "/script_update - Update script dari git\n"
+        "/delete_bot - Hapus bot dari server\n"
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -286,6 +290,81 @@ async def cmd_reboot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"⚠️ Yakin ingin reboot {name}? (gunakan: /reboot_confirm {name})")
 
 
+async def run_git(cmd: list) -> str:
+    try:
+        result = subprocess.run(cmd, cwd=os.path.dirname(os.path.abspath(__file__)),
+                                capture_output=True, text=True, timeout=30)
+        output = result.stdout.strip() or result.stderr.strip()
+        return output or "OK"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+async def cmd_check_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if allowed_users and update.effective_user.id not in allowed_users:
+        return
+
+    await update.message.reply_text("🔍 Memeriksa update...")
+    fetch_result = await run_git(["git", "fetch"])
+    status_result = await run_git(["git", "status", "-sb"])
+
+    behind = await run_git(["git", "rev-list", "--count", "HEAD..origin/main"])
+    if behind.isdigit() and int(behind) > 0:
+        text = (
+            f"📢 *Update tersedia!*\n"
+            f"├ ${behind} commit di belakang\n"
+            f"├ Status: {status_result}\n"
+            f"└ Gunakan /script_update untuk update"
+        )
+    else:
+        text = f"✅ *Bot sudah versi terbaru.*\nStatus: {status_result}"
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def cmd_script_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if allowed_users and update.effective_user.id not in allowed_users:
+        return
+
+    await update.message.reply_text("📥 Mengupdate script...")
+    pull_result = await run_git(["git", "pull"])
+
+    if "Already up to date" in pull_result:
+        await update.message.reply_text("✅ Script sudah versi terbaru.")
+        return
+
+    text = f"📥 *Update selesai!*\n{pull_result}\n\n🔄 Bot akan merestart..."
+    await update.message.reply_text(text, parse_mode="Markdown")
+    logger.info("Script updated via Telegram, restarting...")
+    os._exit(0)
+
+
+async def cmd_delete_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if allowed_users and update.effective_user.id not in allowed_users:
+        return
+
+    await update.message.reply_text(
+        "⚠️ *PERINGATAN!* Ini akan menghapus seluruh folder bot dari server!\n\n"
+        "Jika yakin, gunakan:\n/delete_bot_confirm"
+    )
+
+
+async def cmd_delete_bot_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if allowed_users and update.effective_user.id not in allowed_users:
+        return
+
+    await update.message.reply_text("🗑 Menghapus bot...")
+    bot_dir = os.path.dirname(os.path.abspath(__file__))
+
+    try:
+        subprocess.run(["systemctl", "disable", "stb-bot"], capture_output=True)
+        subprocess.run(["systemctl", "stop", "stb-bot"], capture_output=True)
+        subprocess.run(["rm", "-rf", bot_dir], capture_output=True, timeout=10)
+        await update.message.reply_text("✅ Bot berhasil dihapus dari server.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Gagal menghapus: {str(e)}")
+
+
 async def cmd_restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if allowed_users and update.effective_user.id not in allowed_users:
         return
@@ -336,6 +415,10 @@ def main():
     app.add_handler(CommandHandler("reboot", cmd_reboot))
     app.add_handler(CommandHandler("reboot_confirm", cmd_reboot_confirm))
     app.add_handler(CommandHandler("restart", cmd_restart))
+    app.add_handler(CommandHandler("check_update", cmd_check_update))
+    app.add_handler(CommandHandler("script_update", cmd_script_update))
+    app.add_handler(CommandHandler("delete_bot", cmd_delete_bot))
+    app.add_handler(CommandHandler("delete_bot_confirm", cmd_delete_bot_confirm))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print("[INFO] Bot started. Press Ctrl+C to stop.")
