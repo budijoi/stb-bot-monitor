@@ -143,6 +143,29 @@ crontab -e
 
 > Sesuaikan path `venv/bin/python` jika tidak menggunakan virtual environment atau lokasi direktori berbeda.
 
+## Manajemen Bot (Start / Stop / Restart)
+
+Jika menggunakan systemd service:
+
+```bash
+systemctl start stb-bot      # Start bot
+systemctl stop stb-bot       # Stop bot
+systemctl restart stb-bot    # Restart bot
+systemctl status stb-bot     # Cek status bot
+journalctl -u stb-bot -f     # Lihat log bot real-time
+```
+
+Jika menjalankan manual via terminal:
+```bash
+# Start
+cd /root/stb-bot-monitor
+source venv/bin/activate
+python bot.py
+
+# Stop: tekan Ctrl+C
+# Restart: Ctrl+C lalu jalankan ulang
+```
+
 ## Catatan
 
 - **Speedtest**: Pastikan `speedtest-cli` sudah terinstall di STB (`apt install speedtest-cli`)
