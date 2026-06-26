@@ -104,6 +104,45 @@ apt update && apt install -y python3 python3-pip
 | `/reboot <nama>` | Mereset STB (konfirmasi via `/reboot_confirm`) |
 | `/reboot_confirm <nama>` | Konfirmasi reboot STB |
 
+## Auto-start (Bot Aktif Setelah Reboot)
+
+Bot tidak otomatis aktif saat STB reboot. Gunakan salah satu metode berikut:
+
+### Opsi 1 — Systemd Service (disarankan)
+
+```bash
+cat > /etc/systemd/system/stb-bot.service << 'EOF'
+[Unit]
+Description=STB Bot Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/stb-bot-monitor
+ExecStart=/root/stb-bot-monitor/venv/bin/python /root/stb-bot-monitor/bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable stb-bot
+systemctl start stb-bot
+```
+
+### Opsi 2 — Crontab
+
+```bash
+crontab -e
+# Tambah baris berikut:
+@reboot cd /root/stb-bot-monitor && /root/stb-bot-monitor/venv/bin/python bot.py &
+```
+
+> Sesuaikan path `venv/bin/python` jika tidak menggunakan virtual environment atau lokasi direktori berbeda.
+
 ## Catatan
 
 - **Speedtest**: Pastikan `speedtest-cli` sudah terinstall di STB (`apt install speedtest-cli`)
