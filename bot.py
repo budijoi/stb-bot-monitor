@@ -44,18 +44,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = (
-        "🤖 *STB Monitor Bot*\n\n"
+        "🤖 *STB Monitor By Budijoi*\n\n"
         "Bot untuk monitoring server STB.\n\n"
         "*Commands:*\n"
         "/list - Lihat daftar STB\n"
-        "/status <nama> - Status lengkap STB\n"
-        "/cpu <nama> - CPU temperature\n"
-        "/ram <nama> - RAM usage\n"
-        "/storage <nama> - Storage usage\n"
-        "/uptime <nama> - Uptime\n"
-        "/ping <nama> - Ping test STB\n"
-        "/speedtest <nama> - Speedtest STB\n"
-        "/reboot <nama> - Reboot STB\n"
+        "/status <namastb> - Status lengkap STB\n"
+        "/ping <namastn> - Ping test STB\n"
+        "/speedtest <namastb> - Speedtest STB\n"
+        "/reboot <namastb> - Reboot STB\n"
         "/restart - Restart bot Telegram\n"
     )
     await update.message.reply_text(text, parse_mode="Markdown")
