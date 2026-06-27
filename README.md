@@ -4,6 +4,9 @@ Bot Telegram untuk monitoring server STB (Set-Top Box) via SSH.
 
 ## Fitur
 
+<img width="382" height="687" alt="Screenshot 2026-06-27 131312" src="https://github.com/user-attachments/assets/e866bac6-fdcf-4288-9591-5145a998eb09" />
+<img width="382" height="687" alt="Screenshot 2026-06-27 134205" src="https://github.com/user-attachments/assets/a9577342-c2fa-4c7d-82d4-86dd63516e78" />
+
 - Monitoring status STB: CPU temperature, RAM usage, storage usage, uptime, load average
 - Cek koneksi STB (SSH)
 - Ping test ke target tertentu (default 8.8.8.8)
