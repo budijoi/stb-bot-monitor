@@ -11,7 +11,7 @@ from config import load_config
 from stb_monitor import (
     get_cpu_temp, get_ram_usage, get_storage_usage, get_uptime,
     get_load_average, check_connection, ping_test, speedtest_result,
-    reboot_stb, get_all_status
+    reboot_stb, get_all_status, async_ssh
 )
 
 logging.basicConfig(
@@ -415,9 +415,13 @@ def get_monitor_text() -> str:
 
 
 async def notify_users(bot, text: str):
+    if not allowed_users:
+        logger.warning("Tidak ada user untuk notifikasi (allowed_users kosong)")
+        return
     for uid in allowed_users:
         try:
             await bot.send_message(chat_id=uid, text=text, parse_mode="Markdown")
+            logger.info(f"Notifikasi terkirim ke {uid}")
         except Exception as e:
             logger.warning(f"Gagal kirim notif ke {uid}: {e}")
 
@@ -439,8 +443,8 @@ async def monitor_check(context: ContextTypes.DEFAULT_TYPE):
         pw = stb["password"]
 
         # 1. Cek koneksi (online/offline)
-        conn = await check_connection(host, port, user, pw)
-        online = conn.startswith("✅")
+        conn_raw = await async_ssh(host, port, user, pw, "echo ok")
+        online = conn_raw is not None and conn_raw.strip() == "ok"
 
         if state.prev_online is False and online:
             await notify_users(bot,
@@ -544,6 +548,15 @@ def main():
     if job_queue:
         job_queue.run_repeating(monitor_check, interval=MONITOR_INTERVAL, first=10)
         logger.info(f"Background monitoring aktif setiap {MONITOR_INTERVAL} detik.")
+
+        async def startup_notif(context: ContextTypes.DEFAULT_TYPE):
+            await notify_users(context.bot, "🤖 *Bot STB Monitor aktif*\nMonitoring berjalan setiap 10 detik.")
+        job_queue.run_once(startup_notif, when=5)
+
+    if not allowed_users:
+        logger.warning("allowed_users kosong — notifikasi tidak akan terkirim!")
+    else:
+        logger.info(f"Notifikasi akan dikirim ke {len(allowed_users)} user.")
 
     print(f"[INFO] Bot started. {get_monitor_text()}")
     app.run_polling()
