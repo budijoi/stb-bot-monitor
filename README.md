@@ -5,13 +5,19 @@ Bot Telegram untuk monitoring server STB (Set-Top Box) via SSH.
 ## Fitur
 
 - Monitoring status STB: CPU temperature, RAM usage, storage usage, uptime, load average
-- Cek koneksi STB
-- Ping test ke target tertentu
-- Speedtest internet (via speedtest-cli)
+- Cek koneksi STB (SSH)
+- Ping test ke target tertentu (default 8.8.8.8)
+- Speedtest internet (mendukung speedtest-cli & speedtest Ookla)
 - Reboot STB dari jarak jauh
 - Tombol interaktif untuk refresh data
 - Filter user berdasarkan ID Telegram (opsional)
 - Multi-STB dalam satu bot
+- **Notifikasi otomatis** via Telegram:
+  - Power On / Power Off STB
+  - Internet hilang / kembali
+  - CPU Overheating (>90°C) dan pulih normal
+- Update script via Telegram (`/script_update`)
+- Hapus bot dari server via Telegram (`/delete_bot`)
 
 ## Persyaratan
 
@@ -112,6 +118,27 @@ apt update && apt install -y python3 python3-pip
 | `/script_update` | Update script (git pull) lalu restart |
 | `/delete_bot` | Hapus bot dari server (konfirmasi via `/delete_bot_confirm`) |
 | `/delete_bot_confirm` | Konfirmasi hapus bot |
+| `/monitor on/off` | Aktifkan/nonaktifkan notifikasi monitoring otomatis |
+
+## Notifikasi Otomatis (Background Monitoring)
+
+Bot akan mengirim notifikasi ke Telegram secara otomatis untuk event berikut:
+
+| Event | Notifikasi | Keterangan |
+|---|---|---|
+| ✅ Power On | STB menyala dan SSH dapat diakses | Deteksi perubahan dari offline ke online |
+| ⚠️ Power Off | STB tidak merespons SSH | Deteksi perubahan dari online ke offline |
+| 🌐 Internet Hilang | STB tidak bisa ping ke 8.8.8.8 | Deteksi perubahan koneksi internet |
+| 🌐 Internet Kembali | STB bisa ping ke 8.8.8.8 kembali | Deteksi perubahan |
+| 🔥 CPU Overheating | Suhu CPU > 90°C selama ~10 detik | Peringatan berkelanjutan |
+| ✅ CPU Normal | Suhu CPU turun kembali di bawah 90°C | Notifikasi pemulihan |
+
+Monitoring berjalan setiap 10 detik. Untuk mengaktifkan/menonaktifkan:
+
+```
+/monitor on    → Aktifkan notifikasi
+/monitor off   → Nonaktifkan notifikasi
+```
 
 ## Auto-start (Bot Aktif Setelah Reboot)
 
@@ -177,6 +204,7 @@ python bot.py
 
 ## Catatan
 
+- **Notifications**: Fitur notifikasi otomatis hanya berfungsi jika `allowed_users` diisi dengan ID Telegram yang valid
 - **Speedtest**: Pastikan `speedtest-cli` sudah terinstall di STB (`apt install speedtest-cli`)
 - **Reboot**: User SSH harus memiliki akses `sudo reboot` tanpa password. Tambahkan ke `/etc/sudoers`:
   ```

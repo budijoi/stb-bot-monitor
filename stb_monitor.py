@@ -6,12 +6,12 @@ from typing import Optional, Dict
 executor = ThreadPoolExecutor(max_workers=5)
 
 
-def ssh_command(host: str, port: int, username: str, password: str, cmd: str) -> Optional[str]:
+def ssh_command(host: str, port: int, username: str, password: str, cmd: str, cmd_timeout: int = 10) -> Optional[str]:
     try:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(host, port=port, username=username, password=password, timeout=10)
-        _, stdout, stderr = client.exec_command(cmd, timeout=10)
+        _, stdout, stderr = client.exec_command(cmd, timeout=cmd_timeout)
         output = stdout.read().decode().strip()
         err = stderr.read().decode().strip()
         client.close()
@@ -20,9 +20,9 @@ def ssh_command(host: str, port: int, username: str, password: str, cmd: str) ->
         return f"ERROR: {str(e)}"
 
 
-async def async_ssh(host: str, port: int, username: str, password: str, cmd: str) -> Optional[str]:
+async def async_ssh(host: str, port: int, username: str, password: str, cmd: str, cmd_timeout: int = 10) -> Optional[str]:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(executor, ssh_command, host, port, username, password, cmd)
+    return await loop.run_in_executor(executor, ssh_command, host, port, username, password, cmd, cmd_timeout)
 
 
 async def get_cpu_temp(host: str, port: int, username: str, password: str) -> str:
@@ -86,19 +86,46 @@ async def check_connection(host: str, port: int, username: str, password: str) -
 
 async def ping_test(host: str, port: int, username: str, password: str, target: str = "8.8.8.8", count: int = 4) -> str:
     result = await async_ssh(host, port, username, password,
-                             f"ping -c {count} -W 3 {target} 2>&1 | tail -1")
-    if result and not result.startswith("ERROR") and "packet loss" in result:
-        return result
+                             f"ping -c {count} -W 3 {target} 2>&1")
+    if result and not result.startswith("ERROR"):
+        for line in result.splitlines():
+            if "packet loss" in line:
+                return line.strip()
+        return result.splitlines()[-1] if result.splitlines() else "No output"
     return "Ping result unavailable"
 
 
 async def speedtest_result(host: str, port: int, username: str, password: str) -> str:
-    # Check if speedtest-cli is installed, run it
-    cmd = 'command -v speedtest-cli && speedtest-cli --simple 2>&1 || echo "speedtest-cli not installed"'
-    result = await async_ssh(host, port, username, password, cmd)
+    # Check available speedtest tools
+    check_cmd = (
+        'if command -v speedtest-cli >/dev/null 2>&1; then '
+        'echo "speedtest-cli"; '
+        'elif command -v speedtest >/dev/null 2>&1; then '
+        'echo "speedtest"; '
+        'else echo "not_found"; fi'
+    )
+    tool = await async_ssh(host, port, username, password, check_cmd)
+    if not tool or tool.startswith("ERROR"):
+        return "Speedtest unavailable (SSH error)"
+
+    if tool == "not_found":
+        return (
+            "Speedtest tidak tersedia.\n"
+            "Install dengan:\n"
+            "  apt install speedtest-cli\n"
+            "Atau:\n"
+            "  pip install speedtest-cli"
+        )
+
+    if tool == "speedtest-cli":
+        cmd = 'speedtest-cli --simple 2>&1'
+    else:
+        cmd = 'speedtest --progress=no --format=human 2>&1'
+
+    result = await async_ssh(host, port, username, password, cmd, cmd_timeout=60)
     if result and not result.startswith("ERROR"):
         return result
-    return "Speedtest unavailable"
+    return "Speedtest gagal (mungkin koneksi lambat atau timeout)"
 
 
 async def reboot_stb(host: str, port: int, username: str, password: str) -> str:
