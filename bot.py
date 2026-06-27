@@ -511,6 +511,7 @@ async def cmd_monitor(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
+    if not config.get("bot_token") or config["bot_token"] == "YOUR_BOT_TOKEN_HERE":
         print("[ERROR] Bot token belum diisi! Edit stb_list.json dan isi bot_token.")
         return
 
