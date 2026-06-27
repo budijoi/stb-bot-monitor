@@ -315,6 +315,9 @@ async def cmd_speedtest_callback(query, context: ContextTypes.DEFAULT_TYPE, name
     await query.message.reply_text(f"📶 *Speedtest {name}:*\n{result}", parse_mode="Markdown")
 
 
+REBOOT_CONFIRM = 0
+
+
 async def cmd_reboot_callback(query, context: ContextTypes.DEFAULT_TYPE, name: str):
     stb = get_stb_by_name(name)
     if not stb:
@@ -608,7 +611,29 @@ def main():
     if not stb_list:
         print("[WARNING] Daftar STB kosong. Tambahkan STB di stb_list.json.")
 
-    app = Application.builder().token(config["bot_token"]).build()
+    # Background monitoring loop
+    async def monitor_loop(app: Application):
+        await asyncio.sleep(3)
+        if allowed_users:
+            await notify_users(app.bot, "🤖 *Bot STB Monitor aktif*\nMonitoring berjalan setiap `{}` detik.".format(MONITOR_INTERVAL))
+        for stb in stb_list:
+            state = monitor_states.get(stb["name"])
+            if not state:
+                continue
+            raw = await async_ssh(stb["host"], stb.get("port", 22), stb["username"], stb["password"], "echo ok")
+            state.prev_online = (raw is not None and raw.strip() == "ok")
+            logger.info(f"[Monitor] Baseline {stb['name']}: online={state.prev_online}")
+        while True:
+            await asyncio.sleep(MONITOR_INTERVAL)
+            try:
+                await monitor_check(app.bot)
+            except Exception as e:
+                logger.exception(f"[Monitor] Error: {e}")
+
+    async def post_init(app: Application):
+        asyncio.create_task(monitor_loop(app))
+
+    app = Application.builder().token(config["bot_token"]).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("list", list_stb))
@@ -628,6 +653,7 @@ def main():
             REBOOT_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, reboot_handle_yesno)],
         },
         fallbacks=[CommandHandler("cancel", reboot_cancel)],
+        per_message=False,
     )
     app.add_handler(reboot_handler)
     app.add_handler(CommandHandler("restart", cmd_restart))
@@ -645,30 +671,6 @@ def main():
         logger.info(f"Notifikasi akan dikirim ke {len(allowed_users)} user.")
 
     print(f"[INFO] Bot started. {get_monitor_text()}")
-
-    # Background monitoring loop (asyncio task, lebih reliable dari JobQueue)
-    async def monitor_loop(app: Application):
-        await asyncio.sleep(3)
-        # Startup notification
-        if allowed_users:
-            await notify_users(app.bot, "🤖 *Bot STB Monitor aktif*\nMonitoring berjalan setiap `{}` detik.".format(MONITOR_INTERVAL))
-        # Baseline: init state tanpa kirim notif
-        for stb in stb_list:
-            state = monitor_states.get(stb["name"])
-            if not state:
-                continue
-            raw = await async_ssh(stb["host"], stb.get("port", 22), stb["username"], stb["password"], "echo ok")
-            state.prev_online = (raw is not None and raw.strip() == "ok")
-            logger.info(f"[Monitor] Baseline {stb['name']}: online={state.prev_online}")
-
-        while True:
-            await asyncio.sleep(MONITOR_INTERVAL)
-            try:
-                await monitor_check(app.bot)
-            except Exception as e:
-                logger.exception(f"[Monitor] Error: {e}")
-
-    asyncio.create_task(monitor_loop(app))
     app.run_polling()
 
 
