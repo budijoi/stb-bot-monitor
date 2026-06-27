@@ -5,7 +5,7 @@ import asyncio
 import subprocess
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters, ConversationHandler
 
 from config import load_config
 from stb_monitor import (
@@ -54,7 +54,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/status <namastb> - Status lengkap STB\n"
         "/ping <namastn> - Ping test STB\n"
         "/speedtest <namastb> - Speedtest STB\n"
-        "/reboot <namastb> - Reboot STB\n"
+        "/reboot <nama> - Reboot STB (balas ya/tidak)\n"
         "/restart - Restart bot Telegram\n"
         "/check_update - Cek update script\n"
         "/script_update - Update script dari git\n"
@@ -80,6 +80,13 @@ async def list_stb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📋 *Daftar STB:*\nKlik untuk melihat status:", reply_markup=reply_markup, parse_mode="Markdown")
 
 
+def stb_selection_keyboard(action: str):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"🖥 {stb['name']} ({stb['host']})", callback_data=f"{action}_{stb['name']}")]
+        for stb in stb_list
+    ])
+
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -91,6 +98,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("refresh_"):
         name = data.replace("refresh_", "")
         await show_status(query, context, name, edit=True)
+    elif data.startswith("ping_"):
+        name = data.replace("ping_", "")
+        await cmd_ping_callback(query, context, name)
+    elif data.startswith("speedtest_"):
+        name = data.replace("speedtest_", "")
+        await cmd_speedtest_callback(query, context, name)
+    # reboot_ handled by ConversationHandler
 
 
 async def show_status(query, context: ContextTypes.DEFAULT_TYPE, name: str, edit=False):
@@ -130,7 +144,10 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args:
-        await update.message.reply_text("⚠️ Gunakan: /status <nama_stb>")
+        if not stb_list:
+            await update.message.reply_text("📭 Tidak ada STB terdaftar.")
+            return
+        await update.message.reply_text("📋 Pilih STB:", reply_markup=stb_selection_keyboard("status"))
         return
 
     name = " ".join(context.args)
@@ -238,7 +255,10 @@ async def cmd_ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args:
-        await update.message.reply_text("⚠️ Gunakan: /ping <nama_stb>")
+        if not stb_list:
+            await update.message.reply_text("📭 Tidak ada STB terdaftar.")
+            return
+        await update.message.reply_text("📋 Pilih STB untuk ping:", reply_markup=stb_selection_keyboard("ping"))
         return
 
     name = " ".join(context.args)
@@ -253,12 +273,25 @@ async def cmd_ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"📡 *Ping Result {name} ke {target}:*\n{result}", parse_mode="Markdown")
 
 
+async def cmd_ping_callback(query, context: ContextTypes.DEFAULT_TYPE, name: str):
+    stb = get_stb_by_name(name)
+    if not stb:
+        await query.message.reply_text(f"❌ STB '{name}' tidak ditemukan.")
+        return
+    await query.message.reply_text(f"📡 Ping {name} ke 8.8.8.8...")
+    result = await ping_test(stb["host"], stb.get("port", 22), stb["username"], stb["password"])
+    await query.message.reply_text(f"📡 *Ping Result {name}:*\n{result}", parse_mode="Markdown")
+
+
 async def cmd_speedtest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if allowed_users and update.effective_user.id not in allowed_users:
         return
 
     if not context.args:
-        await update.message.reply_text("⚠️ Gunakan: /speedtest <nama_stb>")
+        if not stb_list:
+            await update.message.reply_text("📭 Tidak ada STB terdaftar.")
+            return
+        await update.message.reply_text("📋 Pilih STB untuk speedtest:", reply_markup=stb_selection_keyboard("speedtest"))
         return
 
     name = " ".join(context.args)
@@ -272,21 +305,81 @@ async def cmd_speedtest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"📶 *Speedtest {name}:*\n{result}", parse_mode="Markdown")
 
 
+async def cmd_speedtest_callback(query, context: ContextTypes.DEFAULT_TYPE, name: str):
+    stb = get_stb_by_name(name)
+    if not stb:
+        await query.message.reply_text(f"❌ STB '{name}' tidak ditemukan.")
+        return
+    await query.message.reply_text(f"⏳ Menjalankan speedtest pada {name}...")
+    result = await speedtest_result(stb["host"], stb.get("port", 22), stb["username"], stb["password"])
+    await query.message.reply_text(f"📶 *Speedtest {name}:*\n{result}", parse_mode="Markdown")
+
+
+async def cmd_reboot_callback(query, context: ContextTypes.DEFAULT_TYPE, name: str):
+    stb = get_stb_by_name(name)
+    if not stb:
+        await query.message.reply_text(f"❌ STB '{name}' tidak ditemukan.")
+        return ConversationHandler.END
+    context.user_data["reboot_name"] = name
+    await query.answer()
+    await query.message.reply_text(
+        f"⚠️ Yakin ingin reboot *{name}*?\nBalas: `ya` / `tidak`",
+        parse_mode="Markdown"
+    )
+    return REBOOT_CONFIRM
+
+
 async def cmd_reboot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if allowed_users and update.effective_user.id not in allowed_users:
-        return
+        return ConversationHandler.END
 
     if not context.args:
-        await update.message.reply_text("⚠️ Gunakan: /reboot <nama_stb>")
-        return
+        if not stb_list:
+            await update.message.reply_text("📭 Tidak ada STB terdaftar.")
+            return ConversationHandler.END
+        await update.message.reply_text("📋 Pilih STB untuk reboot:", reply_markup=stb_selection_keyboard("reboot"))
+        return ConversationHandler.END
 
     name = " ".join(context.args)
     stb = get_stb_by_name(name)
     if not stb:
         await update.message.reply_text(f"❌ STB '{name}' tidak ditemukan.")
-        return
+        return ConversationHandler.END
 
-    await update.message.reply_text(f"⚠️ Yakin ingin reboot {name}? (gunakan: /reboot_confirm {name})")
+    context.user_data["reboot_name"] = name
+    await update.message.reply_text(
+        f"⚠️ Yakin ingin reboot *{name}*?\nBalas: `ya` / `tidak`",
+        parse_mode="Markdown"
+    )
+    return REBOOT_CONFIRM
+
+
+async def reboot_handle_yesno(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    name = context.user_data.get("reboot_name")
+    if not name:
+        await update.message.reply_text("⏳ Session habis, gunakan /reboot lagi.")
+        return ConversationHandler.END
+
+    jawaban = update.message.text.strip().lower()
+    if jawaban == "ya":
+        stb = get_stb_by_name(name)
+        if not stb:
+            await update.message.reply_text(f"❌ STB '{name}' tidak ditemukan.")
+            return ConversationHandler.END
+        await update.message.reply_text(f"🔄 Mereset {name}...")
+        result = await reboot_stb(stb["host"], stb.get("port", 22), stb["username"], stb["password"])
+        await update.message.reply_text(result)
+    else:
+        await update.message.reply_text(f"✅ Reboot {name} dibatalkan.")
+
+    context.user_data.pop("reboot_name", None)
+    return ConversationHandler.END
+
+
+async def reboot_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.pop("reboot_name", None)
+    await update.message.reply_text("✅ Reboot dibatalkan.")
+    return ConversationHandler.END
 
 
 async def run_git(cmd: list) -> str:
@@ -381,25 +474,6 @@ async def cmd_restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os._exit(0)
 
 
-async def cmd_reboot_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if allowed_users and update.effective_user.id not in allowed_users:
-        return
-
-    if not context.args:
-        await update.message.reply_text("⚠️ Gunakan: /reboot_confirm <nama_stb>")
-        return
-
-    name = " ".join(context.args)
-    stb = get_stb_by_name(name)
-    if not stb:
-        await update.message.reply_text(f"❌ STB '{name}' tidak ditemukan.")
-        return
-
-    await update.message.reply_text(f"🔄 Mereset {name}...")
-    result = await reboot_stb(stb["host"], stb.get("port", 22), stb["username"], stb["password"])
-    await update.message.reply_text(result)
-
-
 # ─── Background Monitoring ─────────────────────────────────────
 MONITOR_INTERVAL = 10  # detik
 monitor_enabled = True
@@ -430,11 +504,9 @@ async def notify_users(bot, text: str):
             logger.warning(f"Gagal kirim notif ke {uid}: {e}")
 
 
-async def monitor_check(context: ContextTypes.DEFAULT_TYPE):
+async def monitor_check(bot):
     if not monitor_enabled:
         return
-
-    bot = context.bot
     for stb in stb_list:
         name = stb["name"]
         state = monitor_states.get(name)
@@ -547,8 +619,17 @@ def main():
     app.add_handler(CommandHandler("uptime", cmd_uptime))
     app.add_handler(CommandHandler("ping", cmd_ping))
     app.add_handler(CommandHandler("speedtest", cmd_speedtest))
-    app.add_handler(CommandHandler("reboot", cmd_reboot))
-    app.add_handler(CommandHandler("reboot_confirm", cmd_reboot_confirm))
+    reboot_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler("reboot", cmd_reboot),
+            CallbackQueryHandler(cmd_reboot_callback, pattern="^reboot_"),
+        ],
+        states={
+            REBOOT_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, reboot_handle_yesno)],
+        },
+        fallbacks=[CommandHandler("cancel", reboot_cancel)],
+    )
+    app.add_handler(reboot_handler)
     app.add_handler(CommandHandler("restart", cmd_restart))
     app.add_handler(CommandHandler("check_update", cmd_check_update))
     app.add_handler(CommandHandler("script_update", cmd_script_update))
@@ -558,22 +639,36 @@ def main():
     app.add_handler(CommandHandler("test_notif", cmd_test_notif))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    # Jadwalkan background monitoring
-    job_queue = app.job_queue
-    if job_queue:
-        job_queue.run_repeating(monitor_check, interval=MONITOR_INTERVAL, first=10)
-        logger.info(f"Background monitoring aktif setiap {MONITOR_INTERVAL} detik.")
-
-        async def startup_notif(context: ContextTypes.DEFAULT_TYPE):
-            await notify_users(context.bot, "🤖 *Bot STB Monitor aktif*\nMonitoring berjalan setiap 10 detik.")
-        job_queue.run_once(startup_notif, when=5)
-
     if not allowed_users:
         logger.warning("allowed_users kosong — notifikasi tidak akan terkirim!")
     else:
         logger.info(f"Notifikasi akan dikirim ke {len(allowed_users)} user.")
 
     print(f"[INFO] Bot started. {get_monitor_text()}")
+
+    # Background monitoring loop (asyncio task, lebih reliable dari JobQueue)
+    async def monitor_loop(app: Application):
+        await asyncio.sleep(3)
+        # Startup notification
+        if allowed_users:
+            await notify_users(app.bot, "🤖 *Bot STB Monitor aktif*\nMonitoring berjalan setiap `{}` detik.".format(MONITOR_INTERVAL))
+        # Baseline: init state tanpa kirim notif
+        for stb in stb_list:
+            state = monitor_states.get(stb["name"])
+            if not state:
+                continue
+            raw = await async_ssh(stb["host"], stb.get("port", 22), stb["username"], stb["password"], "echo ok")
+            state.prev_online = (raw is not None and raw.strip() == "ok")
+            logger.info(f"[Monitor] Baseline {stb['name']}: online={state.prev_online}")
+
+        while True:
+            await asyncio.sleep(MONITOR_INTERVAL)
+            try:
+                await monitor_check(app.bot)
+            except Exception as e:
+                logger.exception(f"[Monitor] Error: {e}")
+
+    asyncio.create_task(monitor_loop(app))
     app.run_polling()
 
 

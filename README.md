@@ -104,16 +104,17 @@ apt update && apt install -y python3 python3-pip
 |---|---|
 | `/start` | Menampilkan menu bantuan |
 | `/list` | Menampilkan daftar STB dengan tombol interaktif |
-| `/status <nama>` | Menampilkan status lengkap STB |
-| `/cpu <nama>` | Menampilkan temperature CPU |
-| `/ram <nama>` | Menampilkan penggunaan RAM |
-| `/storage <nama>` | Menampilkan penggunaan storage |
-| `/uptime <nama>` | Menampilkan uptime |
-| `/ping <nama> [target]` | Ping test (default: 8.8.8.8) |
-| `/speedtest <nama>` | Menjalankan speedtest (butuh speedtest-cli di STB) |
-| `/reboot <nama>` | Mereset STB (konfirmasi via `/reboot_confirm`) |
-| `/reboot_confirm <nama>` | Konfirmasi reboot STB |
+| `/status [nama]` | Status lengkap STB (tanpa arg = pilih dari tombol) |
+| `/cpu <nama>` | Temperature CPU |
+| `/ram <nama>` | Penggunaan RAM |
+| `/storage <nama>` | Penggunaan storage |
+| `/uptime <nama>` | Uptime |
+| `/ping [nama] [target]` | Ping test (tanpa arg = pilih dari tombol, default target 8.8.8.8) |
+| `/speedtest [nama]` | Speedtest (tanpa arg = pilih dari tombol) |
+| `/reboot [nama]` | Reboot STB (tanpa arg = pilih dari tombol, konfirmasi `ya`/`tidak`) |
+| `/cancel` | Batalkan proses reboot |
 | `/restart` | Restart bot Telegram |
+| `/test_notif` | Kirim test notifikasi ke pengguna |
 | `/check_update` | Cek update script dari git remote |
 | `/script_update` | Update script (git pull) lalu restart |
 | `/delete_bot` | Hapus bot dari server (konfirmasi via `/delete_bot_confirm`) |
