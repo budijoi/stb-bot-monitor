@@ -449,11 +449,14 @@ async def monitor_check(context: ContextTypes.DEFAULT_TYPE):
         # 1. Cek koneksi (online/offline)
         conn_raw = await async_ssh(host, port, user, pw, "echo ok")
         online = conn_raw is not None and conn_raw.strip() == "ok"
+        logger.info(f"[Monitor] {name} - conn_raw={conn_raw!r}, online={online}, prev_online={state.prev_online}")
 
         if state.prev_online is False and online:
+            logger.info(f"[Monitor] TRIGGER Power On: {name}")
             await notify_users(bot,
                 f"✅ *Power On* — STB `{name}` ({host}) menyala kembali.\n└ {datetime.now():%H:%M:%S %d/%m/%Y}")
         elif state.prev_online is True and not online:
+            logger.info(f"[Monitor] TRIGGER Power Off: {name}")
             await notify_users(bot,
                 f"⚠️ *Power Off* — STB `{name}` ({host}) tidak merespons.\n└ {datetime.now():%H:%M:%S %d/%m/%Y}")
 
@@ -496,6 +499,13 @@ async def monitor_check(context: ContextTypes.DEFAULT_TYPE):
                 await notify_users(bot,
                     f"✅ *CPU Normal* — STB `{name}` suhu turun ke {temp_raw}.\n└ {datetime.now():%H:%M:%S %d/%m/%Y}")
             state.cpu_high_count = 0
+
+
+async def cmd_test_notif(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if allowed_users and update.effective_user.id not in allowed_users:
+        return
+    await notify_users(context.bot, "🧪 *Test Notifikasi*\nJika kamu melihat ini, notifikasi berfungsi!")
+    await update.message.reply_text("✅ Notifikasi test terkirim.")
 
 
 async def cmd_monitor(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -545,6 +555,7 @@ def main():
     app.add_handler(CommandHandler("delete_bot", cmd_delete_bot))
     app.add_handler(CommandHandler("delete_bot_confirm", cmd_delete_bot_confirm))
     app.add_handler(CommandHandler("monitor", cmd_monitor))
+    app.add_handler(CommandHandler("test_notif", cmd_test_notif))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     # Jadwalkan background monitoring
