@@ -299,24 +299,31 @@ async def run_git(cmd: list) -> str:
         return f"Error: {str(e)}"
 
 
+async def get_git_branch() -> str:
+    branch = await run_git(["git", "rev-parse", "--abbrev", "HEAD"])
+    return branch if not branch.startswith("Error") else "main"
+
+
 async def cmd_check_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if allowed_users and update.effective_user.id not in allowed_users:
         return
 
-    await update.message.reply_text("🔍 Memeriksa update...")
-    fetch_result = await run_git(["git", "fetch"])
+    branch = await get_git_branch()
+    await update.message.reply_text(f"🔍 Memeriksa update (branch: {branch})...")
+    await run_git(["git", "fetch"])
     status_result = await run_git(["git", "status", "-sb"])
 
-    behind = await run_git(["git", "rev-list", "--count", "HEAD..origin/main"])
+    behind = await run_git(["git", "rev-list", "--count", f"HEAD..origin/{branch}"])
     if behind.isdigit() and int(behind) > 0:
         text = (
             f"📢 *Update tersedia!*\n"
-            f"├ ${behind} commit di belakang\n"
-            f"├ Status: {status_result}\n"
+            f"├ Branch: `{branch}`\n"
+            f"├ {behind} commit di belakang\n"
+            f"├ Status: `{status_result}`\n"
             f"└ Gunakan /script_update untuk update"
         )
     else:
-        text = f"✅ *Bot sudah versi terbaru.*\nStatus: {status_result}"
+        text = f"✅ *Bot sudah versi terbaru.*\nStatus: `{status_result}`"
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -325,14 +332,15 @@ async def cmd_script_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if allowed_users and update.effective_user.id not in allowed_users:
         return
 
-    await update.message.reply_text("📥 Mengupdate script...")
-    pull_result = await run_git(["git", "pull"])
+    branch = await get_git_branch()
+    await update.message.reply_text(f"📥 Mengupdate script dari branch `{branch}`...")
+    pull_result = await run_git(["git", "pull", "origin", branch])
 
     if "Already up to date" in pull_result:
         await update.message.reply_text("✅ Script sudah versi terbaru.")
         return
 
-    text = f"📥 *Update selesai!*\n{pull_result}\n\n🔄 Bot akan merestart..."
+    text = f"📥 *Update selesai!*\n```\n{pull_result}\n```\n🔄 Bot akan merestart..."
     await update.message.reply_text(text, parse_mode="Markdown")
     logger.info("Script updated via Telegram, restarting...")
     os._exit(0)
