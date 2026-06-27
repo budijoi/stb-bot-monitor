@@ -1,6 +1,9 @@
 import logging
 import os
 import sys
+import asyncio
+import subprocess
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -8,7 +11,7 @@ from config import load_config
 from stb_monitor import (
     get_cpu_temp, get_ram_usage, get_storage_usage, get_uptime,
     get_load_average, check_connection, ping_test, speedtest_result,
-    reboot_stb, get_all_status
+    reboot_stb, get_all_status, async_ssh
 )
 
 logging.basicConfig(
@@ -53,6 +56,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/speedtest <namastb> - Speedtest STB\n"
         "/reboot <namastb> - Reboot STB\n"
         "/restart - Restart bot Telegram\n"
+        "/check_update - Cek update script\n"
+        "/script_update - Update script dari git\n"
+        "/delete_bot - Hapus bot dari server\n"
+        "/monitor on/off - Aktifkan/nonaktifkan notifikasi monitoring\n"
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -282,6 +289,81 @@ async def cmd_reboot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"⚠️ Yakin ingin reboot {name}? (gunakan: /reboot_confirm {name})")
 
 
+async def run_git(cmd: list) -> str:
+    try:
+        result = subprocess.run(cmd, cwd=os.path.dirname(os.path.abspath(__file__)),
+                                capture_output=True, text=True, timeout=30)
+        output = result.stdout.strip() or result.stderr.strip()
+        return output or "OK"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+async def cmd_check_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if allowed_users and update.effective_user.id not in allowed_users:
+        return
+
+    await update.message.reply_text("🔍 Memeriksa update...")
+    fetch_result = await run_git(["git", "fetch"])
+    status_result = await run_git(["git", "status", "-sb"])
+
+    behind = await run_git(["git", "rev-list", "--count", "HEAD..origin/main"])
+    if behind.isdigit() and int(behind) > 0:
+        text = (
+            f"📢 *Update tersedia!*\n"
+            f"├ ${behind} commit di belakang\n"
+            f"├ Status: {status_result}\n"
+            f"└ Gunakan /script_update untuk update"
+        )
+    else:
+        text = f"✅ *Bot sudah versi terbaru.*\nStatus: {status_result}"
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def cmd_script_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if allowed_users and update.effective_user.id not in allowed_users:
+        return
+
+    await update.message.reply_text("📥 Mengupdate script...")
+    pull_result = await run_git(["git", "pull"])
+
+    if "Already up to date" in pull_result:
+        await update.message.reply_text("✅ Script sudah versi terbaru.")
+        return
+
+    text = f"📥 *Update selesai!*\n{pull_result}\n\n🔄 Bot akan merestart..."
+    await update.message.reply_text(text, parse_mode="Markdown")
+    logger.info("Script updated via Telegram, restarting...")
+    os._exit(0)
+
+
+async def cmd_delete_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if allowed_users and update.effective_user.id not in allowed_users:
+        return
+
+    await update.message.reply_text(
+        "⚠️ *PERINGATAN!* Ini akan menghapus seluruh folder bot dari server!\n\n"
+        "Jika yakin, gunakan:\n/delete_bot_confirm"
+    )
+
+
+async def cmd_delete_bot_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if allowed_users and update.effective_user.id not in allowed_users:
+        return
+
+    await update.message.reply_text("🗑 Menghapus bot...")
+    bot_dir = os.path.dirname(os.path.abspath(__file__))
+
+    try:
+        subprocess.run(["systemctl", "disable", "stb-bot"], capture_output=True)
+        subprocess.run(["systemctl", "stop", "stb-bot"], capture_output=True)
+        subprocess.run(["rm", "-rf", bot_dir], capture_output=True, timeout=10)
+        await update.message.reply_text("✅ Bot berhasil dihapus dari server.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Gagal menghapus: {str(e)}")
+
+
 async def cmd_restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if allowed_users and update.effective_user.id not in allowed_users:
         return
@@ -310,6 +392,124 @@ async def cmd_reboot_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text(result)
 
 
+# ─── Background Monitoring ─────────────────────────────────────
+MONITOR_INTERVAL = 10  # detik
+monitor_enabled = True
+
+class STBMonitorState:
+    def __init__(self, name: str):
+        self.name = name
+        self.prev_online = None
+        self.prev_internet = None
+        self.cpu_high_count = 0
+
+monitor_states = {stb["name"]: STBMonitorState(stb["name"]) for stb in stb_list}
+
+
+def get_monitor_text() -> str:
+    return "🔴 Monitoring aktif" if monitor_enabled else "⚪ Monitoring nonaktif"
+
+
+async def notify_users(bot, text: str):
+    if not allowed_users:
+        logger.warning("Tidak ada user untuk notifikasi (allowed_users kosong)")
+        return
+    for uid in allowed_users:
+        try:
+            await bot.send_message(chat_id=uid, text=text, parse_mode="Markdown")
+            logger.info(f"Notifikasi terkirim ke {uid}")
+        except Exception as e:
+            logger.warning(f"Gagal kirim notif ke {uid}: {e}")
+
+
+async def monitor_check(context: ContextTypes.DEFAULT_TYPE):
+    if not monitor_enabled:
+        return
+
+    bot = context.bot
+    for stb in stb_list:
+        name = stb["name"]
+        state = monitor_states.get(name)
+        if not state:
+            continue
+
+        host = stb["host"]
+        port = stb.get("port", 22)
+        user = stb["username"]
+        pw = stb["password"]
+
+        # 1. Cek koneksi (online/offline)
+        conn_raw = await async_ssh(host, port, user, pw, "echo ok")
+        online = conn_raw is not None and conn_raw.strip() == "ok"
+
+        if state.prev_online is False and online:
+            await notify_users(bot,
+                f"✅ *Power On* — STB `{name}` ({host}) menyala kembali.\n└ {datetime.now():%H:%M:%S %d/%m/%Y}")
+        elif state.prev_online is True and not online:
+            await notify_users(bot,
+                f"⚠️ *Power Off* — STB `{name}` ({host}) tidak merespons.\n└ {datetime.now():%H:%M:%S %d/%m/%Y}")
+
+        state.prev_online = online
+        if not online:
+            state.cpu_high_count = 0
+            continue
+
+        # 2. Cek koneksi internet
+        internet_res = await ping_test(host, port, user, pw, target="8.8.8.8", count=2)
+        internet_ok = "packet loss" in internet_res and "0%" in internet_res
+
+        if state.prev_internet is True and not internet_ok:
+            await notify_users(bot,
+                f"🌐 *Internet Hilang* — STB `{name}` ({host}) kehilangan koneksi internet.\n└ {datetime.now():%H:%M:%S %d/%m/%Y}")
+        elif state.prev_internet is False and internet_ok:
+            await notify_users(bot,
+                f"🌐 *Internet Kembali* — STB `{name}` ({host}) terhubung kembali.\n└ {datetime.now():%H:%M:%S %d/%m/%Y}")
+
+        state.prev_internet = internet_ok
+
+        # 3. Cek CPU temp > 90°C selama 5+ detik
+        temp_raw = await get_cpu_temp(host, port, user, pw)
+        try:
+            temp_val = float(temp_raw.replace("°C", ""))
+        except (ValueError, AttributeError):
+            temp_val = 0
+
+        if temp_val > 90:
+            state.cpu_high_count += 1
+            if state.cpu_high_count == 1:
+                # Kirim peringatan pertama (setelah ~10 detik)
+                await notify_users(bot,
+                    f"🔥 *CPU Overheating* — STB `{name}`\n"
+                    f"├ 🌡 Suhu: {temp_raw}\n"
+                    f"├ ⏱ Durasi: ~10 detik\n"
+                    f"└ {datetime.now():%H:%M:%S %d/%m/%Y}")
+        else:
+            if state.cpu_high_count >= 1:
+                await notify_users(bot,
+                    f"✅ *CPU Normal* — STB `{name}` suhu turun ke {temp_raw}.\n└ {datetime.now():%H:%M:%S %d/%m/%Y}")
+            state.cpu_high_count = 0
+
+
+async def cmd_monitor(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if allowed_users and update.effective_user.id not in allowed_users:
+        return
+
+    global monitor_enabled
+    if not context.args:
+        status = "🔴 aktif" if monitor_enabled else "⚪ nonaktif"
+        await update.message.reply_text(f"📡 Monitoring saat ini {status}.\nGunakan `/monitor on` atau `/monitor off`.")
+        return
+
+    if context.args[0] == "on":
+        monitor_enabled = True
+        await update.message.reply_text("🔴 Monitoring diaktifkan.")
+    elif context.args[0] == "off":
+        monitor_enabled = False
+        await update.message.reply_text("⚪ Monitoring dinonaktifkan.")
+    else:
+        await update.message.reply_text("Gunakan: `/monitor on` atau `/monitor off`")
+
+
 def main():
     if not config.get("bot_token") or config["bot_token"] == "YOUR_BOT_TOKEN_HERE":
         print("[ERROR] Bot token belum diisi! Edit stb_list.json dan isi bot_token.")
@@ -332,9 +532,29 @@ def main():
     app.add_handler(CommandHandler("reboot", cmd_reboot))
     app.add_handler(CommandHandler("reboot_confirm", cmd_reboot_confirm))
     app.add_handler(CommandHandler("restart", cmd_restart))
+    app.add_handler(CommandHandler("check_update", cmd_check_update))
+    app.add_handler(CommandHandler("script_update", cmd_script_update))
+    app.add_handler(CommandHandler("delete_bot", cmd_delete_bot))
+    app.add_handler(CommandHandler("delete_bot_confirm", cmd_delete_bot_confirm))
+    app.add_handler(CommandHandler("monitor", cmd_monitor))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("[INFO] Bot started. Press Ctrl+C to stop.")
+    # Jadwalkan background monitoring
+    job_queue = app.job_queue
+    if job_queue:
+        job_queue.run_repeating(monitor_check, interval=MONITOR_INTERVAL, first=10)
+        logger.info(f"Background monitoring aktif setiap {MONITOR_INTERVAL} detik.")
+
+        async def startup_notif(context: ContextTypes.DEFAULT_TYPE):
+            await notify_users(context.bot, "🤖 *Bot STB Monitor aktif*\nMonitoring berjalan setiap 10 detik.")
+        job_queue.run_once(startup_notif, when=5)
+
+    if not allowed_users:
+        logger.warning("allowed_users kosong — notifikasi tidak akan terkirim!")
+    else:
+        logger.info(f"Notifikasi akan dikirim ke {len(allowed_users)} user.")
+
+    print(f"[INFO] Bot started. {get_monitor_text()}")
     app.run_polling()
 
 
