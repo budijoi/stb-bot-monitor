@@ -123,6 +123,8 @@ apt update && apt install -y python3 python3-pip
 | `/delete_bot` | Hapus bot dari server (konfirmasi via `/delete_bot_confirm`) |
 | `/delete_bot_confirm` | Konfirmasi hapus bot |
 | `/monitor on/off` | Aktifkan/nonaktifkan notifikasi monitoring otomatis |
+| `/add_stb <nama> <host> <user> <pass> [port]` | Tambah STB baru (langsung tersimpan) |
+| `/remove_stb <nama>` | Hapus STB dari daftar |
 
 ## Notifikasi Otomatis (Background Monitoring)
 

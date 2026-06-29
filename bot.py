@@ -7,7 +7,7 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters, ConversationHandler
 
-from config import load_config
+from config import load_config, save_config
 from stb_monitor import (
     get_cpu_temp, get_ram_usage, get_storage_usage, get_uptime,
     get_load_average, check_connection, ping_test, speedtest_result,
@@ -60,6 +60,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/script_update - Update script dari git\n"
         "/delete_bot - Hapus bot dari server\n"
         "/monitor on/off - Aktifkan/nonaktifkan notifikasi monitoring\n"
+        "/add_stb <nama> <host> <user> <pass> [port] - Tambah STB baru\n"
+        "/remove_stb <nama> - Hapus STB\n"
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -583,6 +585,49 @@ async def cmd_test_notif(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Notifikasi test terkirim.")
 
 
+async def cmd_add_stb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if allowed_users and update.effective_user.id not in allowed_users:
+        return
+    if len(context.args) < 4:
+        await update.message.reply_text("⚠️ Gunakan: `/add_stb <nama> <host> <username> <password> [port]`", parse_mode="Markdown")
+        return
+
+    name, host = context.args[0], context.args[1]
+    username, password = context.args[2], context.args[3]
+    port = int(context.args[4]) if len(context.args) > 4 else 22
+
+    if get_stb_by_name(name):
+        await update.message.reply_text(f"❌ STB dengan nama '{name}' sudah ada.")
+        return
+
+    new_stb = {"name": name, "host": host, "port": port, "username": username, "password": password}
+    stb_list.append(new_stb)
+    config["stb_list"] = stb_list
+    save_config(config)
+    monitor_states[name] = STBMonitorState(name)
+    await update.message.reply_text(f"✅ STB `{name}` ({host}) berhasil ditambahkan.", parse_mode="Markdown")
+
+
+async def cmd_remove_stb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if allowed_users and update.effective_user.id not in allowed_users:
+        return
+    if not context.args:
+        await update.message.reply_text("⚠️ Gunakan: `/remove_stb <nama>`", parse_mode="Markdown")
+        return
+
+    name = " ".join(context.args)
+    stb = get_stb_by_name(name)
+    if not stb:
+        await update.message.reply_text(f"❌ STB '{name}' tidak ditemukan.")
+        return
+
+    stb_list.remove(stb)
+    config["stb_list"] = stb_list
+    save_config(config)
+    monitor_states.pop(name, None)
+    await update.message.reply_text(f"🗑 STB `{name}` berhasil dihapus.", parse_mode="Markdown")
+
+
 async def cmd_monitor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if allowed_users and update.effective_user.id not in allowed_users:
         return
@@ -663,6 +708,8 @@ def main():
     app.add_handler(CommandHandler("delete_bot_confirm", cmd_delete_bot_confirm))
     app.add_handler(CommandHandler("monitor", cmd_monitor))
     app.add_handler(CommandHandler("test_notif", cmd_test_notif))
+    app.add_handler(CommandHandler("add_stb", cmd_add_stb))
+    app.add_handler(CommandHandler("remove_stb", cmd_remove_stb))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     if not allowed_users:
